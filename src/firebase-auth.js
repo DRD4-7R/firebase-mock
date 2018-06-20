@@ -455,6 +455,7 @@ FirebaseAuth.prototype.verifyIdToken = function (token) {
           customClaims.uid = user.uid;
           customClaims.email = user.email;
           customClaims.email_verified = user.emailVerified;
+          customClaims.phone_number = user.phoneNumber;
           resolve(customClaims);
         }
       }
