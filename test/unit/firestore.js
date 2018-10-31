@@ -134,6 +134,18 @@ describe('MockFirestore', function () {
         }).catch(done);
       }).catch(done);
     });
+
+    it('returns the return value of the passed function', function () {
+      db.autoFlush();
+
+      return db.runTransaction(function(transaction) {
+        return transaction.get(db.doc('doc')).then(function() {
+          return 'cba';
+        });
+      }).then(function(transactionReturn) {
+        expect(transactionReturn).to.equal('cba');
+      });
+    });
   });
 
   describe('#batch', function () {
@@ -148,6 +160,9 @@ describe('MockFirestore', function () {
         expect(db.collection('collections').doc('a').get()).to.eventually.have.property('exists').equal(true)
       ]).then(function() {
         var batch = db.batch();
+        batch.create(db.doc('docToCreate'), {
+          name: 'abc'
+        });
         batch.update(db.doc('doc'), {
           name: 'abc'
         });
@@ -157,6 +172,7 @@ describe('MockFirestore', function () {
         batch.delete(db.collection('collections').doc('a'));
         batch.commit().then(function() {
           Promise.all([
+            expect(db.doc('docToCreate').get()).to.eventually.have.property('exists').equal(true),
             expect(db.doc('doc2').get()).to.eventually.have.property('exists').equal(true),
             expect(db.collection('collections').doc('a').get()).to.eventually.have.property('exists').equal(false)
           ]).then(function() {
@@ -184,6 +200,86 @@ describe('MockFirestore', function () {
       });
 
       db.flush();
+    });
+
+    it('supports method chaining', function () {
+      var doc1 = db.doc('doc1');
+      var doc2 = db.doc('doc2');
+      var doc3 = db.doc('doc3');
+      var doc4 = db.doc('doc4');
+
+      doc3.set({value: -1});
+      doc4.set({value: 4});
+
+      db.batch()
+        .set(doc1, {value: 1})
+        .set(doc2, {value: 2})
+        .update(doc3, {value: 3})
+        .delete(doc4)
+        .commit();
+
+      var awaitChecks = Promise
+        .all([doc1.get(), doc2.get(), doc3.get(), doc4.get()])
+        .then(function(snaps) {
+          expect(snaps[0].data()).to.deep.equal({value: 1});
+          expect(snaps[1].data()).to.deep.equal({value: 2});
+          expect(snaps[2].data()).to.deep.equal({value: 3});
+          expect(snaps[3].exists).to.equal(false);
+        });
+
+      db.flush();
+
+      return awaitChecks;
+    });
+
+    context('when "batch.commit" is not called', function () {
+      afterEach(function () {
+        db.doc('col/batch-foo').delete();
+        db.doc('col/batch-bar').delete();
+        db.flush();
+      });
+
+      it('does not create documents', function (done) {
+        var batch = db.batch();
+        batch.set(db.doc('col/batch-foo'), { foo: 'fooo' });
+        batch.set(db.doc('col/batch-bar'), { bar: 'barr' });
+
+        expect(function () { db.flush(); }).to.throw('No deferred tasks to be flushed');
+
+        var promises = [
+          db.doc('col/batch-foo').get(),
+          db.doc('col/batch-bar').get()
+        ];
+        db.flush();
+
+        Promise.all(promises).then(function (docs) {
+          expect(docs[0].exists).to.eq(false);
+          expect(docs[1].exists).to.eq(false);
+          done();
+        });
+      });
+    });
+  });
+
+  describe('#getAll', function() {
+    it('gets the value of all passed documents', function() {
+      var doc1 = db.doc('doc1');
+      var doc2 = db.doc('doc2');
+      var doc3 = db.doc('doc3');
+
+      doc1.set({value: 1});
+      doc2.set({value: 2});
+
+      var getAll = db
+        .getAll(doc1, doc2, doc3);
+
+      db.flush();
+
+      return getAll.then(function(snaps) {
+        expect(snaps[0].data()).to.deep.equal({value: 1});
+        expect(snaps[1].data()).to.deep.equal({value: 2});
+        expect(snaps[2].exists).to.equal(false);
+      });
     });
   });
 });
