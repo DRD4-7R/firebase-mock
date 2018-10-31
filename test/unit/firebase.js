@@ -319,6 +319,10 @@ describe('MockFirebase', function () {
       expect(ref.ref).to.equal(ref);
     });
 
+    it('child / returns same reference', function () {
+      expect(ref.child('/')).to.equal(ref);
+    });
+
   });
 
   describe('#set', function () {
@@ -544,6 +548,27 @@ describe('MockFirebase', function () {
       ref.update(update);
       ref.flush();
       expect(ref.getData().some).to.eql({prop: 12});
+    });
+
+    it('can work with nested paths beginning with /', function () {
+      var update = {};
+      update['some/prop/withoutSlash'] = 12;
+      update['/some/prop/withSlash'] = 12;
+      ref.update(update);
+      ref.flush();
+      expect(ref.getData().some.prop).to.eql({withoutSlash: 12, withSlash: 12});
+    });
+
+    it('overrides the paths with existing data', function () {
+      ref.child('some').child('prop').set({foo: 1});
+      ref.flush();
+
+      var update = {};
+      update['some/prop'] = {bar: 2};
+      ref.update(update);
+      ref.flush();
+
+      expect(ref.getData().some.prop).to.eql({bar: 2});
     });
 
     it('does not change unrelated data', function () {

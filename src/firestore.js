@@ -57,43 +57,84 @@ MockFirestore.prototype.toString = function () {
   return this.path;
 };
 
+MockFirestore.prototype.getAll = function(/* ...docs */) {
+  var docs = Array.from(arguments);
+  return Promise.all(
+    docs.map(function(doc) {
+      return doc.get();
+    })
+  );
+};
+
 MockFirestore.prototype.runTransaction = function(transFunc) {
   var batch = this.batch();
   batch.get = function(doc) {
     return doc.get();
   };
   return new Promise(function(resolve, reject) {
-    transFunc(batch).then(function() {
-      batch.commit().then(resolve).catch(reject);
+    Promise.resolve(transFunc(batch)).then(function(value) {
+      batch
+        .commit()
+        .then(function () {
+          resolve(value);
+        })
+        .catch(reject);
     }).catch(reject);
+  });
+};
+
+var processBatchQueue = function (queue) {
+  _.forEach(queue, function (queueItem) {
+    var method = queueItem.method;
+    var doc = queueItem.args[0];
+    var data = queueItem.args[1];
+    var opts = queueItem.args[2];
+
+    if (method === 'set') {
+      if (opts && opts.merge === true) {
+        doc._update(data, { setMerge: true });
+      } else {
+        doc.set(data);
+      }
+    } else if (method === 'create') {
+      doc.create(data);
+    } else if (method === 'update') {
+      doc.update(data);
+    } else if (method === 'delete') {
+      doc.delete();
+    }
   });
 };
 
 MockFirestore.prototype.batch = function () {
   var self = this;
-  return {
+  var queue = [];
+  var batch = {
     set: function(doc, data, opts) {
-      var _opts = _.assign({}, { merge: false }, opts);
-      if (_opts.merge) {
-        doc._update(data, { setMerge: true });
-      }
-      else {
-        doc.set(data);
-      }
+      queue.push({ method: 'set', args: [doc, data, opts] });
+      return batch;
+    },
+    create: function(doc, data) {
+      queue.push({ method: 'create', args: [doc, data] });
+      return batch;
     },
     update: function(doc, data) {
-      doc.update(data);
+      queue.push({ method: 'update', args: [doc, data] });
+      return batch;
     },
     delete: function(doc) {
-      doc.delete();
+      queue.push({ method: 'delete', args: [doc] });
+      return batch;
     },
     commit: function() {
+      processBatchQueue(queue);
       if (self.queue.events.length > 0) {
         self.flush();
       }
       return Promise.resolve();
     }
   };
+  return batch;
 };
 
 MockFirestore.prototype.collection = function (path) {
